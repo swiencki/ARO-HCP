@@ -51,7 +51,6 @@ func TestRoleDefinitionsCachedReader_GetCachedByID(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	innerErr := errors.New("azure unavailable")
 	cachedResponse := roleDefByIDResponse(testRoleDefinitionRID)
 	initialCached := roleDefByIDResponse(testRoleDefinitionRID)
 	refreshedCached := roleDefByIDResponse(testRoleDefinitionRID)
@@ -99,10 +98,12 @@ func TestRoleDefinitionsCachedReader_GetCachedByID(t *testing.T) {
 			},
 		},
 		{
-			name: "propagates azure api interaction error when it occurs",
+			name: "propagates and caches azure api interaction error when it occurs",
 			setupClient: func(ctrl *gomock.Controller) azureclient.RoleDefinitionsClient {
 				mockClient := azureclient.NewMockRoleDefinitionsClient(ctrl)
-				mockClient.EXPECT().GetByID(gomock.Any(), testRoleDefinitionRID, nil).Return(armauthorization.RoleDefinitionsClientGetByIDResponse{}, innerErr).Times(1)
+				apiErr := errors.New("service unavailable")
+				// Times(1): second GetCachedByID must not call Azure again (negative cache hit).
+				mockClient.EXPECT().GetByID(gomock.Any(), testRoleDefinitionRID, nil).Return(armauthorization.RoleDefinitionsClientGetByIDResponse{}, apiErr).Times(1)
 				return mockClient
 			},
 			clock: utilsclock.RealClock{},
@@ -116,12 +117,47 @@ func TestRoleDefinitionsCachedReader_GetCachedByID(t *testing.T) {
 				{
 					roleDefinitionID: testRoleDefinitionRID,
 					wantError:        true,
-					wantErrContains:  "failed to get role definition",
+					wantErrContains:  "service unavailable",
+				},
+				{
+					roleDefinitionID: testRoleDefinitionRID,
+					wantError:        true,
+					wantErrContains:  "service unavailable",
 				},
 			},
 		},
 		{
-			name: "error is not cached; next call retries",
+			name: "successfully fetches role definition after error TTL expired",
+			setupClient: func(ctrl *gomock.Controller) azureclient.RoleDefinitionsClient {
+				mockClient := azureclient.NewMockRoleDefinitionsClient(ctrl)
+				gomock.InOrder(
+					mockClient.EXPECT().GetByID(gomock.Any(), testRoleDefinitionRID, nil).Return(armauthorization.RoleDefinitionsClientGetByIDResponse{}, errors.New("propagation delayed error")),
+					mockClient.EXPECT().GetByID(gomock.Any(), testRoleDefinitionRID, nil).Return(cachedResponse, nil),
+				)
+				return mockClient
+			},
+			clock: clocktesting.NewFakePassiveClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
+			calls: []struct {
+				advanceClockBy   time.Duration
+				roleDefinitionID string
+				wantResponse     armauthorization.RoleDefinitionsClientGetByIDResponse
+				wantError        bool
+				wantErrContains  string
+			}{
+				{
+					roleDefinitionID: testRoleDefinitionRID,
+					wantError:        true,
+					wantErrContains:  "propagation delayed error",
+				},
+				{
+					advanceClockBy:   roleDefinitionResourceIDCacheKeyErrorTTL + time.Second,
+					roleDefinitionID: testRoleDefinitionRID,
+					wantResponse:     cachedResponse,
+				},
+			},
+		},
+		{
+			name: "success entry remains cached for success TTL after recovering from error",
 			setupClient: func(ctrl *gomock.Controller) azureclient.RoleDefinitionsClient {
 				mockClient := azureclient.NewMockRoleDefinitionsClient(ctrl)
 				gomock.InOrder(
@@ -130,7 +166,7 @@ func TestRoleDefinitionsCachedReader_GetCachedByID(t *testing.T) {
 				)
 				return mockClient
 			},
-			clock: utilsclock.RealClock{},
+			clock: clocktesting.NewFakePassiveClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
 			calls: []struct {
 				advanceClockBy   time.Duration
 				roleDefinitionID string
@@ -141,15 +177,22 @@ func TestRoleDefinitionsCachedReader_GetCachedByID(t *testing.T) {
 				{
 					roleDefinitionID: testRoleDefinitionRID,
 					wantError:        true,
+					wantErrContains:  "temporary",
 				},
 				{
+					advanceClockBy:   roleDefinitionResourceIDCacheKeyErrorTTL + time.Second,
+					roleDefinitionID: testRoleDefinitionRID,
+					wantResponse:     cachedResponse,
+				},
+				{
+					advanceClockBy:   roleDefinitionResourceIDCacheKeySuccessTTL,
 					roleDefinitionID: testRoleDefinitionRID,
 					wantResponse:     cachedResponse,
 				},
 			},
 		},
 		{
-			name: "refreshes expired cache entry from inner client",
+			name: "refreshes expired success cache entry from inner client",
 			setupClient: func(ctrl *gomock.Controller) azureclient.RoleDefinitionsClient {
 				mockClient := azureclient.NewMockRoleDefinitionsClient(ctrl)
 				gomock.InOrder(
@@ -171,7 +214,7 @@ func TestRoleDefinitionsCachedReader_GetCachedByID(t *testing.T) {
 					wantResponse:     initialCached,
 				},
 				{
-					advanceClockBy:   roleDefinitionResourceIDCacheKeyTTL + time.Second,
+					advanceClockBy:   roleDefinitionResourceIDCacheKeySuccessTTL + time.Second,
 					roleDefinitionID: testRoleDefinitionRID,
 					wantResponse:     refreshedCached,
 				},
