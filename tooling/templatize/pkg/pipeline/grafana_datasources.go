@@ -107,10 +107,15 @@ func resolveGrafanaADXOptions(serviceGroup string, adx *types.GrafanaADXDatasour
 		return nil, err
 	}
 
+	deleteWhenDisabled, err := resolveOptionalBool(serviceGroup, "adx.deleteWhenDisabled", adx.DeleteWhenDisabled, cfg, outputs)
+	if err != nil {
+		return nil, err
+	}
+
 	if !enabled {
 		result := &resolvedGrafanaADXOptions{
 			Enabled:            false,
-			DeleteWhenDisabled: adx.DeleteWhenDisabled,
+			DeleteWhenDisabled: deleteWhenDisabled,
 		}
 		// Resolve datasource name even when disabled so that
 		// deleteWhenDisabled can identify the target to remove.
@@ -132,7 +137,7 @@ func resolveGrafanaADXOptions(serviceGroup string, adx *types.GrafanaADXDatasour
 
 	resolved := &resolvedGrafanaADXOptions{
 		Enabled:            enabled,
-		DeleteWhenDisabled: adx.DeleteWhenDisabled,
+		DeleteWhenDisabled: deleteWhenDisabled,
 		Geographies:        geographies,
 		CurrentGeography:   currentGeography,
 		DataConsistency:    adx.DataConsistency,

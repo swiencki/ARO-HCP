@@ -11,6 +11,11 @@ resource database 'Microsoft.Kusto/clusters/databases@2024-04-13' existing = {
   name: '${kustoName}/${databaseName}'
 }
 
+// NOTE: The assignment names below were changed from 'grant-${guid(...)}'
+// to 'grant-ingest-${guid(...)}' / 'grant-viewer-${guid(...)}' to
+// distinguish ingest and viewer roles. Old assignments with the 'grant-'
+// prefix are now orphaned in Azure RBAC and should be cleaned up manually
+// per-cluster (they grant identical permissions to the new assignments).
 resource grantIngest 'Microsoft.Kusto/clusters/databases/principalAssignments@2024-04-13' = [
   for id in ingestAccessPrincipalIds: {
     parent: database

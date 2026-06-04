@@ -78,15 +78,20 @@ resourceGroups:
     # the per-region "this region owns the geo's Kusto cluster" marker
     # (mirrors the per-region allowlist that the deleted geography-level
     # step encoded as executionConstraints), and arobit.kusto.enabled is
-    # what kusto-lookup.bicep gates on for the kustoUri output. Today
+    # what kusto-lookup.bicep gates on for the kustoUri output.
+    # deleteWhenDisabled is gated on manageInstance alone (not the full
+    # triple-AND) so that the owner region can clean up stale datasources
+    # when the feature flag or Kusto is turned off; non-owner regions
+    # resolve deleteWhenDisabled=false and skip deletion, preventing a
+    # race where a non-owner deletes what the owner created. Today
     # exactly one region per geoShortId has manageInstance=true; if that
-    # invariant ever changes, the geographies allowlist below would
-    # need to be region-aware to avoid two regions racing to reconcile
-    # the same global Grafana datasource.
+    # invariant ever changes, the geographies allowlist below would need
+    # to become region-aware.
     adx:
       enabled:
         value: "{{ and .monitoring.adxDatasourceEnabled .kusto.manageInstance .arobit.kusto.enabled }}"
-      deleteWhenDisabled: true
+      deleteWhenDisabled:
+        value: "{{ .kusto.manageInstance }}"
       clusterUrl:
         input:
           resourceGroup: kusto

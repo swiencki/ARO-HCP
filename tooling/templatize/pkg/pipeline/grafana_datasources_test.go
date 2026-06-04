@@ -37,12 +37,20 @@ func testGrafanaDatasourceConfig() configtypes.Configuration {
 
 func testGrafanaDatasourceOutputs(kustoURI string) Outputs {
 	return Outputs{
-		"Microsoft.Azure.ARO.HCP.Geography": map[string]map[string]Output{
-			"kusto-infra": {
-				"deploy": ArmOutput{
+		"Microsoft.Azure.ARO.HCP.Region": map[string]map[string]Output{
+			"kusto": {
+				"output": ArmOutput{
 					"kustoUri": map[string]any{
 						"type":  "String",
 						"value": kustoURI,
+					},
+					"serviceLogsDatabase": map[string]any{
+						"type":  "String",
+						"value": "ServiceLogs",
+					},
+					"adxDatasourceGeographies": map[string]any{
+						"type":  "String",
+						"value": " UK, eus2 ",
 					},
 				},
 			},
@@ -53,18 +61,24 @@ func testGrafanaDatasourceOutputs(kustoURI string) Outputs {
 func TestResolveGrafanaADXOptionsEnabledAndAllowed(t *testing.T) {
 	adx := &types.GrafanaADXDatasource{
 		Enabled:            types.Value{Value: "true"},
-		DeleteWhenDisabled: true,
+		DeleteWhenDisabled: types.Value{Value: "true"},
 		ClusterURL: types.Value{Input: &types.Input{
-			StepDependency: types.StepDependency{ResourceGroup: "kusto-infra", Step: "deploy"},
+			StepDependency: types.StepDependency{ResourceGroup: "kusto", Step: "output"},
 			Name:           "kustoUri",
 		}},
-		DefaultDatabase: types.Value{ConfigRef: "kusto.serviceLogsDatabase"},
-		DatasourceName:  types.Value{Value: "kusto-int-uk"},
-		Geographies:     types.Value{ConfigRef: "monitoring.adxDatasourceGeographies"},
+		DefaultDatabase: types.Value{Input: &types.Input{
+			StepDependency: types.StepDependency{ResourceGroup: "kusto", Step: "output"},
+			Name:           "serviceLogsDatabase",
+		}},
+		DatasourceName: types.Value{Value: "kusto-int-uk"},
+		Geographies: types.Value{Input: &types.Input{
+			StepDependency: types.StepDependency{ResourceGroup: "kusto", Step: "output"},
+			Name:           "adxDatasourceGeographies",
+		}},
 		DataConsistency: "strongconsistency",
 	}
 
-	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Geography", adx, testGrafanaDatasourceConfig(), testGrafanaDatasourceOutputs("https://example.kusto.windows.net"))
+	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Region", adx, testGrafanaDatasourceConfig(), testGrafanaDatasourceOutputs("https://example.kusto.windows.net"))
 	if err != nil {
 		t.Fatalf("resolveGrafanaADXOptions returned error: %v", err)
 	}
@@ -93,17 +107,31 @@ func TestResolveGrafanaADXOptionsEnabledAndAllowed(t *testing.T) {
 
 func TestResolveGrafanaADXOptionsDisabledWhenGeographyNotAllowed(t *testing.T) {
 	cfg := testGrafanaDatasourceConfig()
-	cfg["monitoring"] = map[string]any{
-		"adxDatasourceGeographies": "eus2",
+	// Uses production Ev2 path: geographies come from Input refs to
+	// step outputs, not configRef to config.
+	outputs := Outputs{
+		"Microsoft.Azure.ARO.HCP.Region": map[string]map[string]Output{
+			"kusto": {
+				"output": ArmOutput{
+					"adxDatasourceGeographies": map[string]any{
+						"type":  "String",
+						"value": "eus2",
+					},
+				},
+			},
+		},
 	}
 	adx := &types.GrafanaADXDatasource{
 		Enabled:            types.Value{Value: "true"},
-		DeleteWhenDisabled: true,
+		DeleteWhenDisabled: types.Value{Value: "true"},
 		DatasourceName:     types.Value{Value: "kusto-int-uk"},
-		Geographies:        types.Value{ConfigRef: "monitoring.adxDatasourceGeographies"},
+		Geographies: types.Value{Input: &types.Input{
+			StepDependency: types.StepDependency{ResourceGroup: "kusto", Step: "output"},
+			Name:           "adxDatasourceGeographies",
+		}},
 	}
 
-	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Geography", adx, cfg, nil)
+	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Region", adx, cfg, outputs)
 	if err != nil {
 		t.Fatalf("resolveGrafanaADXOptions returned error: %v", err)
 	}
@@ -132,6 +160,9 @@ func TestResolveGrafanaADXOptionsDisabledWhenGeographyNotAllowed(t *testing.T) {
 }
 
 func TestResolveGrafanaADXOptionsDisabledByConfigRef(t *testing.T) {
+	// This test validates the legacy ConfigRef resolution path, which is
+	// still supported but not used in production Ev2 deployments (Ev2
+	// uses Input refs instead).
 	cfg := testGrafanaDatasourceConfig()
 	cfg["monitoring"] = map[string]any{
 		"adxDatasourceEnabled":     false,
@@ -139,12 +170,12 @@ func TestResolveGrafanaADXOptionsDisabledByConfigRef(t *testing.T) {
 	}
 	adx := &types.GrafanaADXDatasource{
 		Enabled:            types.Value{ConfigRef: "monitoring.adxDatasourceEnabled"},
-		DeleteWhenDisabled: true,
+		DeleteWhenDisabled: types.Value{Value: "true"},
 		DatasourceName:     types.Value{Value: "kusto-int-uk"},
 		Geographies:        types.Value{ConfigRef: "monitoring.adxDatasourceGeographies"},
 	}
 
-	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Geography", adx, cfg, nil)
+	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Region", adx, cfg, nil)
 	if err != nil {
 		t.Fatalf("resolveGrafanaADXOptions returned error: %v", err)
 	}
@@ -170,15 +201,27 @@ func TestResolveGrafanaADXOptionsDisabledByConfigRef(t *testing.T) {
 
 func TestResolveGrafanaADXOptionsRejectsInvalidGeographyAllowlist(t *testing.T) {
 	cfg := testGrafanaDatasourceConfig()
-	cfg["monitoring"] = map[string]any{
-		"adxDatasourceGeographies": "uk,!",
+	outputs := Outputs{
+		"Microsoft.Azure.ARO.HCP.Region": map[string]map[string]Output{
+			"kusto": {
+				"output": ArmOutput{
+					"adxDatasourceGeographies": map[string]any{
+						"type":  "String",
+						"value": "uk,!",
+					},
+				},
+			},
+		},
 	}
 	adx := &types.GrafanaADXDatasource{
-		Enabled:     types.Value{Value: "true"},
-		Geographies: types.Value{ConfigRef: "monitoring.adxDatasourceGeographies"},
+		Enabled: types.Value{Value: "true"},
+		Geographies: types.Value{Input: &types.Input{
+			StepDependency: types.StepDependency{ResourceGroup: "kusto", Step: "output"},
+			Name:           "adxDatasourceGeographies",
+		}},
 	}
 
-	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Geography", adx, cfg, nil)
+	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Region", adx, cfg, outputs)
 	if err != nil {
 		t.Fatalf("resolveGrafanaADXOptions returned error: %v", err)
 	}
@@ -205,14 +248,27 @@ func TestResolveGrafanaADXOptionsFailsClosedOnMissingKustoURI(t *testing.T) {
 	adx := &types.GrafanaADXDatasource{
 		Enabled: types.Value{Value: "true"},
 		ClusterURL: types.Value{Input: &types.Input{
-			StepDependency: types.StepDependency{ResourceGroup: "kusto-infra", Step: "deploy"},
+			StepDependency: types.StepDependency{ResourceGroup: "kusto", Step: "output"},
 			Name:           "kustoUri",
 		}},
 		DefaultDatabase: types.Value{Value: "ServiceLogs"},
 		DatasourceName:  types.Value{Value: "kusto-int-uk"},
 	}
 
-	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Geography", adx, testGrafanaDatasourceConfig(), testGrafanaDatasourceOutputs(""))
+	outputs := Outputs{
+		"Microsoft.Azure.ARO.HCP.Region": map[string]map[string]Output{
+			"kusto": {
+				"output": ArmOutput{
+					"kustoUri": map[string]any{
+						"type":  "String",
+						"value": "",
+					},
+				},
+			},
+		},
+	}
+
+	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Region", adx, testGrafanaDatasourceConfig(), outputs)
 	if err != nil {
 		t.Fatalf("resolveGrafanaADXOptions returned error: %v", err)
 	}
@@ -235,5 +291,67 @@ func TestResolveGrafanaADXOptionsFailsClosedOnMissingKustoURI(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cluster URL is required") {
 		t.Fatalf("expected missing cluster URL error, got %v", err)
+	}
+}
+
+func TestResolveGrafanaADXOptionsNonOwnerRegionSkipsDeletion(t *testing.T) {
+	// Non-owner regions resolve deleteWhenDisabled=false, preventing
+	// them from deleting a datasource the owner region created.
+	adx := &types.GrafanaADXDatasource{
+		Enabled:            types.Value{Value: "false"},
+		DeleteWhenDisabled: types.Value{Value: "false"},
+		DatasourceName:     types.Value{Value: "kusto-int-uk"},
+	}
+
+	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Region", adx, testGrafanaDatasourceConfig(), nil)
+	if err != nil {
+		t.Fatalf("resolveGrafanaADXOptions returned error: %v", err)
+	}
+	if resolved.Enabled {
+		t.Fatal("expected ADX desired state disabled for non-owner region")
+	}
+	if resolved.DeleteWhenDisabled {
+		t.Fatal("expected deleteWhenDisabled=false for non-owner region")
+	}
+	if resolved.DatasourceName != "kusto-int-uk" {
+		t.Fatalf("expected datasource name preserved, got %q", resolved.DatasourceName)
+	}
+
+	opts := modify.DefaultAddDatasourceOptions()
+	opts.SubscriptionID = "subscription-id"
+	opts.ResourceGroup = "resource-group"
+	opts.GrafanaName = "grafana-name"
+	opts.AzureMonitorEnabled = false
+	opts.ADXEnabled = resolved.Enabled
+	opts.ADXDeleteWhenDisabled = resolved.DeleteWhenDisabled
+	opts.ADXDatasourceName = resolved.DatasourceName
+
+	validated, err := opts.Validate(t.Context())
+	if err != nil {
+		t.Fatalf("Validate returned error: %v", err)
+	}
+	if validated.ADXEnabled {
+		t.Fatal("expected ADX desired state disabled")
+	}
+	if validated.ADXDeleteWhenDisabled {
+		t.Fatal("expected deleteWhenDisabled=false to propagate through validation")
+	}
+}
+
+func TestResolveGrafanaADXOptionsOmittedDeleteWhenDisabledDefaultsFalse(t *testing.T) {
+	// When deleteWhenDisabled is omitted from YAML, the zero Value
+	// resolves to false via resolveOptionalBool, matching the old bool
+	// zero-value behavior.
+	adx := &types.GrafanaADXDatasource{
+		Enabled:        types.Value{Value: "false"},
+		DatasourceName: types.Value{Value: "kusto-int-uk"},
+	}
+
+	resolved, err := resolveGrafanaADXOptions("Microsoft.Azure.ARO.HCP.Region", adx, testGrafanaDatasourceConfig(), nil)
+	if err != nil {
+		t.Fatalf("resolveGrafanaADXOptions returned error: %v", err)
+	}
+	if resolved.DeleteWhenDisabled {
+		t.Fatal("expected omitted deleteWhenDisabled to default to false")
 	}
 }
