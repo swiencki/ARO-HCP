@@ -102,6 +102,11 @@ type ServiceProviderNodePoolStatus struct {
 	// The reference contains a mapping between the logical name we give to the Maestro bundle internally
 	// and the Maestro Bundle Name and ID at the Maestro API level.
 	MaestroReadonlyBundles MaestroBundleReferenceList `json:"maestroReadonlyBundles,omitempty"`
+
+	// ClusterServiceUpdatableConfigHash is a SHA-256 hex digest of the node pool
+	// properties last successfully dispatched to Cluster Service on update.
+	// TODO here or in the NodePool cosmos resource in ServiceProviderProperties?
+	ClusterServiceUpdatableConfigHash string `json:"clusterServiceUpdatableConfigHash,omitempty"`
 }
 
 // ServiceProviderNodePoolStatusVersion contains the actual version information.
