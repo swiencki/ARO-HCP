@@ -101,7 +101,7 @@ func readRulesFile(filename string) (*monitoringv1.PrometheusRule, error) {
 }
 
 func (o *Options) Complete(configFilePath string, promtoolPath string) error {
-	if promtoolPath == "" {
+	if len(promtoolPath) == 0 {
 		return fmt.Errorf("promtoolPath cannot be an empty string")
 	}
 	o.promtoolPath = promtoolPath
@@ -123,14 +123,14 @@ func (o *Options) Complete(configFilePath string, promtoolPath string) error {
 
 	o.outputReplacements = config.PrometheusRules.OutputReplacements
 	for _, replacement := range o.outputReplacements {
-		if replacement.From == "" || replacement.To == "" {
+		if len(replacement.From) == 0 || len(replacement.To) == 0 {
 			return fmt.Errorf("expression replacement must have both from and to fields (from=%q, to=%q)", replacement.From, replacement.To)
 		}
 	}
 
 	o.regexOutputReplacements = make([]RegexReplacements, len(config.PrometheusRules.RegexOutputReplacements))
 	for i, regexReplacement := range config.PrometheusRules.RegexOutputReplacements {
-		if regexReplacement.From == "" || regexReplacement.To == "" {
+		if len(regexReplacement.From) == 0 || len(regexReplacement.To) == 0 {
 			return fmt.Errorf("regex expression replacement must have both from and to fields (from=%q, to=%q)", regexReplacement.From, regexReplacement.To)
 		}
 		compiledRegex, err := regexp.Compile(regexReplacement.From)
@@ -227,20 +227,27 @@ func (o *Options) RunTests() error {
 
 	logrus.Debugf("Created tempdir %s", dir)
 
+	// First pass: write all rule files to the temp dir so that cross-file
+	// references in test rule_files lists (e.g. recording rules referenced by
+	// alerting rule tests) are resolvable by promtool.
 	for _, irf := range o.ruleFiles {
-		if irf.TestFileBaseName == "" {
+		if len(irf.FileBaseName) == 0 {
 			continue
 		}
 		ruleGroups, err := yaml.Marshal(irf.Rules.Spec)
 		if err != nil {
 			return fmt.Errorf("error Marshalling rule groups %v", err)
 		}
-
-		tmpFile := fmt.Sprintf("%s%s%s", dir, string(os.PathSeparator), irf.FileBaseName)
-
-		err = os.WriteFile(tmpFile, ruleGroups, 0644)
-		if err != nil {
+		tmpFile := filepath.Join(dir, filepath.Base(irf.FileBaseName))
+		if err = os.WriteFile(tmpFile, ruleGroups, 0644); err != nil {
 			return fmt.Errorf("error writing rule groups file %v", err)
+		}
+	}
+
+	// Second pass: run promtool tests for each file that has a test.
+	for _, irf := range o.ruleFiles {
+		if len(irf.TestFileBaseName) == 0 {
+			continue
 		}
 
 		fileNameParts := strings.Split(irf.FileBaseName, ".")
@@ -330,7 +337,7 @@ param location string = resourceGroup().location
 				logger.Warn("alert limit is not supported in Microsoft.AlertsManagement/prometheusRuleGroups")
 			}
 			if group.Interval == nil {
-				if irf.DefaultEvaluationInterval == "" {
+				if len(irf.DefaultEvaluationInterval) == 0 {
 					group.Interval = monitoringv1.DurationPointer(defaultEvaluationInterval)
 				} else {
 					group.Interval = monitoringv1.DurationPointer(irf.DefaultEvaluationInterval)
@@ -469,6 +476,8 @@ resource {{.name}} 'Microsoft.AlertsManagement/prometheusRuleGroups@2023-03-01' 
           actionProperties: {
             'IcM.Title': '#$.labels.cluster#: #$.annotations.title#'
             'IcM.CorrelationId': '#$.annotations.correlationId#'
+            'IcM.Description': '#$.annotations.info#'
+            'IcM.TsgId': '#$.annotations.runbook_url#'
           }
         }]
         alert: '{{.Alert}}'
@@ -612,6 +621,8 @@ func severityFor(labels map[string]*string) *int32 {
 	// https://msazure.visualstudio.com/AzureRedHatOpenShift/_wiki/wikis/ARO.wiki/838022/IcM-best-practices?anchor=severity-levels
 
 	switch *severity {
+	case "critical_sla":
+		return ptr.To(int32(2)) // SEV 2: SLA-bound. Pages on-call; weekend impact. Use only for SLA-bound alerts with runbooks.
 	case "critical":
 		return ptr.To(int32(2)) // SEV 2: Single service SLA impact.
 	case "warning":

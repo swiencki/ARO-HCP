@@ -518,6 +518,51 @@ func TestOptionsGenerate(t *testing.T) {
 		assert.NotContains(t, generated, "alert: 'BlockedAlert'")
 	})
 
+	t.Run("critical_sla severity maps to severity 2", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		outputFile := filepath.Join(tmpDir, "AlertingRules_output.bicep")
+
+		opts := &Options{
+			outputBicep: outputFile,
+			ruleFiles: []alertingRuleFile{
+				{
+					Rules: monitoringv1.PrometheusRule{
+						Spec: monitoringv1.PrometheusRuleSpec{
+							Groups: []monitoringv1.RuleGroup{
+								{
+									Name: "sla-rules",
+									Rules: []monitoringv1.Rule{
+										{
+											Alert: "UJKubeApiserverAvailability1h5m",
+											Expr:  intstr.FromString("up == 0"),
+											For:   (*monitoringv1.Duration)(ptr.To("2m")),
+											Labels: map[string]string{
+												"severity": "critical_sla",
+											},
+											Annotations: map[string]string{
+												"summary": "[HCP] [{{ $labels.name }}] KubeAPIServer Fast Error Budget Burn (1h/5m)",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		err := opts.Generate()
+		assert.NoError(t, err)
+
+		content, err := os.ReadFile(outputFile)
+		assert.NoError(t, err)
+
+		generated := string(content)
+		assert.Contains(t, generated, "alert: 'UJKubeApiserverAvailability1h5m'")
+		assert.Contains(t, generated, "severity: 2")
+	})
+
 	t.Run("preserves per-alert correlationId override", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		outputFile := filepath.Join(tmpDir, "generatedAlertingRules.bicep")
@@ -650,6 +695,7 @@ func TestSeverityFor(t *testing.T) {
 		labels   map[string]*string
 		expected *int32
 	}{
+		{map[string]*string{"severity": ptr.To("critical_sla")}, ptr.To(int32(2))},
 		{map[string]*string{"severity": ptr.To("critical")}, ptr.To(int32(2))},
 		{map[string]*string{"severity": ptr.To("warning")}, ptr.To(int32(3))},
 		{map[string]*string{"severity": ptr.To("info")}, ptr.To(int32(4))},

@@ -1,6 +1,7 @@
 prometheusRules:
   rulesFolders:
   - ../observability/alerts/HCPkasRecord-prometheusRule-KSM.yaml
+  - ../observability/alerts/UJKubeApiserverAvailabilityRecord-prometheusRule-KSM.yaml
   - ../observability/alerts/HCPkasRecord-prometheusRule-apiserver-requests.yaml
   - ../observability/alerts/HCPkasRecord-prometheusRule-latency.yaml
   untestedRules: []

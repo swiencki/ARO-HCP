@@ -1,4 +1,14 @@
 prometheusRules:
-  rulesFolders: []
-  untestedRules: []
-  outputBicep: ../dev-infrastructure/modules/metrics/rules/generatedRPPrometheusAlertingRules.bicep
+  rulesFolders:
+  # Recording rule files are listed so the generator can resolve dependencies
+  # for the alerting rules. They produce no output themselves (no alerts from
+  # them are included via includedAlertsByGroup).
+  - ../observability/alerts/HCPkasRecord-prometheusRule-KSM.yaml
+  - ../observability/alerts/UJKubeApiserverAvailabilityRecord-prometheusRule-KSM.yaml
+  - ../observability/alerts/UJKubeApiserverAvailabilityMonitor-prometheusRule-KSM.yaml
+  includedAlertsByGroup:
+  - groupName: rp-uj-kas-availability-monitor-rules
+    alerts:
+    - UJKubeApiserverAvailability1h5m
+    - UJKubeApiserverAvailability6h30m
+  outputBicep: ../dev-infrastructure/modules/metrics/rules/generatedRPHCPPrometheusAlertingRules.bicep
