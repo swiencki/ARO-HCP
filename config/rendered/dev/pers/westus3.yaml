@@ -1,12 +1,12 @@
 acm:
   mce:
     bundle:
-      digest: sha256:beb1ebcf6243a1bf78eb8760cf1fbda2336b8f218a3a7e3884ed3c6864d7ef69
+      digest: sha256:74f2cb86ebc9f0bc589d861c14ba533685e726d26d27b2ca2bdc2c06d46bfea9
       registry: quay.io
       repository: redhat-user-workloads/crt-redhat-acm-tenant/mce-operator-bundle-mce-211
   operator:
     bundle:
-      digest: sha256:ea8fd7e65469a0e2ee810450c30751c48904cd21232fe5b1630c8e54aed7314a
+      digest: sha256:0de8c4f7d33ba2c1b9bebefb0a7b495aec2326ec6ea4227c8401f47acd69de20
       registry: quay.io
       repository: redhat-user-workloads/crt-redhat-acm-tenant/acm-operator-bundle-acm-216
 acr:
@@ -207,7 +207,7 @@ clustersService:
 customExporter:
   enabledCollectors: service-tag-usage,kusto-logs-current
   image:
-    digest: sha256:2476efd096b031e1fd98bec5f028cd358022523342f00316d05d36247c4189ae
+    digest: sha256:dbfb0596b065aeba9fa8fae2335284ee147ac3491cfb67a1928a31f9c4d72da5
     registry: arohcpsvcdev.azurecr.io
     repository: arohcpmetrics
   k8s:
@@ -441,7 +441,7 @@ imageSync:
   ocMirror:
     enabled: true
     image:
-      digest: sha256:883eae8e2c6d90a1c754ae7c75183812bf47437cfbb37a7c1d9fa84213280aa4
+      digest: sha256:351926d18e41295da97d87f00da4d9933a3ad1c4e9b4252970f471d289f60a37
       registry: arohcpsvcdev.azurecr.io
       repository: image-sync/oc-mirror
     jobNamePrefix: ""
