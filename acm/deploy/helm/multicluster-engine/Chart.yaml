@@ -7,6 +7,6 @@ keywords:
 - multiclusterengine
 name: multicluster-engine
 sources:
-- quay.io/redhat-user-workloads/crt-redhat-acm-tenant/mce-operator-bundle-mce-211@sha256:beb1ebcf6243a1bf78eb8760cf1fbda2336b8f218a3a7e3884ed3c6864d7ef69
+- quay.io/redhat-user-workloads/crt-redhat-acm-tenant/mce-operator-bundle-mce-211@sha256:74f2cb86ebc9f0bc589d861c14ba533685e726d26d27b2ca2bdc2c06d46bfea9
 type: application
 version: 2.11.2
